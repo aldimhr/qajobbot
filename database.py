@@ -50,6 +50,17 @@ CREATE TABLE IF NOT EXISTS sent_jobs (
 );
 """
 
+CREATE_ERROR_LOG = """
+CREATE TABLE IF NOT EXISTS error_log (
+    id          INTEGER PRIMARY KEY AUTOINCREMENT,
+    source      TEXT NOT NULL,
+    level       TEXT NOT NULL DEFAULT 'error',
+    message     TEXT NOT NULL,
+    details     TEXT,
+    created_at  TEXT NOT NULL DEFAULT (datetime('now'))
+);
+"""
+
 CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_jobs_scraped ON jobs(scraped_at DESC);",
     "CREATE INDEX IF NOT EXISTS idx_jobs_active  ON jobs(is_active) WHERE is_active=1;",
@@ -94,6 +105,7 @@ async def init_db():
         await db.execute(CREATE_JOBS)
         await db.execute(CREATE_USERS)
         await db.execute(CREATE_SENT_JOBS)
+        await db.execute(CREATE_ERROR_LOG)
         for idx in CREATE_INDEXES:
             await db.execute(idx)
         await db.execute(CREATE_FTS)
@@ -290,3 +302,75 @@ async def get_digest_jobs(since_hours: int = 24) -> list[dict]:
             (f"-{since_hours}",),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+
+async def log_error(source: str, level: str, message: str, details: str = ""):
+    """Log a scraper error/warning to the database."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute(
+            "INSERT INTO error_log (source, level, message, details) VALUES (?, ?, ?, ?)",
+            (source, level, message, details[:2000]),
+        )
+        await db.commit()
+
+
+async def get_recent_errors(limit: int = 20) -> list[dict]:
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT * FROM error_log ORDER BY created_at DESC LIMIT ?",
+            (limit,),
+        )
+        return [dict(r) for r in await cursor.fetchall()]
+
+
+async def clear_errors():
+    async with aiosqlite.connect(DB_PATH) as db:
+        await db.execute("DELETE FROM error_log")
+        await db.commit()
+
+
+async def get_stats() -> dict:
+    """Get bot statistics for admin dashboard."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        stats = {}
+
+        cursor = await db.execute("SELECT COUNT(*) FROM jobs WHERE is_active = 1")
+        stats["total_jobs"] = (await cursor.fetchone())[0]
+
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM jobs WHERE scraped_at > datetime('now', '-24 hours')"
+        )
+        stats["jobs_24h"] = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM users")
+        stats["total_users"] = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM users WHERE is_subscribed = 1")
+        stats["subscribers"] = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM sent_jobs")
+        stats["total_sent"] = (await cursor.fetchone())[0]
+
+        cursor = await db.execute("SELECT COUNT(*) FROM error_log")
+        stats["total_errors"] = (await cursor.fetchone())[0]
+
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM error_log WHERE created_at > datetime('now', '-24 hours')"
+        )
+        stats["errors_24h"] = (await cursor.fetchone())[0]
+
+        # Jobs per source
+        cursor = await db.execute(
+            "SELECT source, COUNT(*) as cnt FROM jobs WHERE is_active = 1 GROUP BY source ORDER BY cnt DESC"
+        )
+        stats["jobs_by_source"] = {row[0]: row[1] for row in await cursor.fetchall()}
+
+        # Latest job
+        cursor = await db.execute(
+            "SELECT title, company_name, scraped_at FROM jobs ORDER BY scraped_at DESC LIMIT 1"
+        )
+        row = await cursor.fetchone()
+        stats["latest_job"] = {"title": row[0], "company": row[1], "time": row[2]} if row else None
+
+        return stats

@@ -4,6 +4,7 @@ from telegram import Bot
 from enrichment import is_qa_job, is_indonesia_relevant, extract_skills, infer_level, summarize
 import database as db
 from dispatcher import dispatch_new_jobs, send_daily_digest
+from admin import notify_scraper_error, notify_scraper_warning
 from proxy_pool import proxy_pool
 from scrapers.remoteok import RemoteOKScraper
 from scrapers.remotive import RemotiveScraper
@@ -15,8 +16,11 @@ from scrapers.jobstreet import JobStreetScraper
 
 logger = logging.getLogger(__name__)
 
+# Track consecutive errors per source for alerting
+_error_counts: dict[str, int] = {}
 
-async def run_scraper(scraper, source_name: str):
+
+async def run_scraper(scraper, source_name: str, bot: Bot = None):
     """Run a single scraper, filter, enrich, and save jobs."""
     try:
         raw_jobs = await scraper.scrape()
@@ -51,9 +55,22 @@ async def run_scraper(scraper, source_name: str):
                 saved += 1
 
         logger.info(f"[{source_name}] scraped={len(raw_jobs)} saved={saved}")
+
+        # Reset error count on success
+        if source_name in _error_counts:
+            _error_counts[source_name] = 0
+
         await scraper.close()
     except Exception as e:
         logger.error(f"[{source_name}] scraper error: {e}")
+        _error_counts[source_name] = _error_counts.get(source_name, 0) + 1
+
+        # Notify admin on first error or every 3rd consecutive error
+        if bot and (_error_counts[source_name] == 1 or _error_counts[source_name] % 3 == 0):
+            await notify_scraper_error(
+                bot, source_name,
+                f"{e}\n(Consecutive errors: {_error_counts[source_name]})"
+            )
 
 
 def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
@@ -73,7 +90,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     for scraper, name, minutes in scrapers:
         sched.add_job(
             run_scraper, "interval", minutes=minutes,
-            args=[scraper, name], id=f"scraper_{name}",
+            args=[scraper, name, bot], id=f"scraper_{name}",
             max_instances=1, coalesce=True,
         )
 
