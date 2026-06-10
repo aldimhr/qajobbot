@@ -318,7 +318,7 @@ async def register_commands(app: Application):
         BotCommand("unsubscribe", "🔕 Berhenti berlangganan"),
         BotCommand("preferences", "⚙️ Atur filter preferensi"),
         BotCommand("jobs", "📋 Lihat 10 lowongan terbaru"),
-        BotCommand("search", "🔍 Cari lowongan (contoh: /search selenium)"),
+        BotCommand("search", "🔍 Cari lowongan"),
         BotCommand("help", "📖 Daftar perintah"),
         BotCommand("about", "ℹ️ Info tentang bot ini"),
         BotCommand("deletedata", "🗑️ Hapus data kamu"),
@@ -328,7 +328,7 @@ async def register_commands(app: Application):
 
 
 def setup_bot(token: str) -> Application:
-    app = Application.builder().token(token).post_init(register_commands).build()
+    app = Application.builder().token(token).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))

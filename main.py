@@ -2,7 +2,7 @@ import asyncio
 import logging
 from config import settings
 from database import init_db
-from bot import setup_bot
+from bot import setup_bot, register_commands
 from scheduler import setup_scheduler
 from proxy_pool import proxy_pool
 
@@ -40,6 +40,7 @@ async def main():
     logger.info("Bot starting in polling mode...")
     async with app:
         await app.initialize()
+        await register_commands(app)
         await app.start()
         await app.updater.start_polling()
         logger.info("Bot is running! Press Ctrl+C to stop.")
