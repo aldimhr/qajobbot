@@ -1,43 +1,64 @@
 import logging
-from scrapers.base import BaseScraper
-from constants import QA_SEARCH_QUERIES
+from scrapers.pw_base import PlaywrightBaseScraper
 
 logger = logging.getLogger(__name__)
 
 
-class KalibrrScraper(BaseScraper):
+class KalibrrScraper(PlaywrightBaseScraper):
     SOURCE = "kalibrr"
-    API_URL = "https://www.kalibrr.com/api/jobs?search={query}&location=Indonesia&sort=date&limit=20&offset=0"
+    HOME_URL = "https://www.kalibrr.com/"
 
     async def scrape(self) -> list[dict]:
         all_jobs = []
         seen_ids = set()
-        for query in QA_SEARCH_QUERIES[:4]:
-            try:
-                url = self.API_URL.format(query=query.replace(" ", "+"))
-                resp = await self.get(url)
-                data = resp.json()
-                for job in data.get("data", []):
-                    jid = str(job.get("id", ""))
-                    if jid in seen_ids:
-                        continue
-                    seen_ids.add(jid)
-                    company = job.get("company", {})
-                    location = job.get("location", {})
-                    all_jobs.append({
-                        "external_id": jid,
-                        "source": self.SOURCE,
-                        "source_url": f"https://www.kalibrr.com/job/{jid}",
-                        "title": job.get("title", ""),
-                        "company_name": company.get("name", "") if isinstance(company, dict) else str(company),
-                        "location": location.get("name", "") if isinstance(location, dict) else str(location),
-                        "work_type": job.get("job_type", ""),
-                        "salary_min": job.get("min_salary"),
-                        "salary_max": job.get("max_salary"),
-                        "posted_at": job.get("published_at", ""),
-                        "description_raw": job.get("description", ""),
-                    })
-            except Exception as e:
-                logger.error(f"[{self.SOURCE}] error for '{query}': {e}")
-        logger.info(f"[{self.SOURCE}] scraped {len(all_jobs)} jobs")
+        try:
+            await self._launch_browser()
+            page = await self._get_page(self.HOME_URL, wait_seconds=4)
+
+            # Find all job links on the home page
+            links = await page.query_selector_all('a[href*="/jobs/"]')
+            for link in links:
+                href = await link.get_attribute("href")
+                if not href or "/jobs/" not in href:
+                    continue
+
+                # Extract job ID from URL pattern: /id-ID/c/{company}/jobs/{id}/{slug}
+                parts = href.split("/jobs/")
+                if len(parts) < 2:
+                    continue
+                job_id_part = parts[1].split("/")[0]
+                if not job_id_part.isdigit():
+                    continue
+
+                if job_id_part in seen_ids:
+                    continue
+                seen_ids.add(job_id_part)
+
+                title = (await link.inner_text()).strip()
+                if not title or title.lower() in ("view post", ""):
+                    continue
+
+                # Extract company from URL
+                company = ""
+                if "/c/" in href:
+                    company = href.split("/c/")[1].split("/")[0] if "/c/" in href else ""
+
+                # Build full URL
+                full_url = href if href.startswith("http") else f"https://www.kalibrr.com{href}"
+
+                all_jobs.append({
+                    "external_id": f"kalibrr-{job_id_part}",
+                    "source": self.SOURCE,
+                    "source_url": full_url,
+                    "title": title,
+                    "company_name": company.replace("-", " ").title(),
+                    "location": "Indonesia",
+                })
+
+            await page.close()
+            logger.info(f"[{self.SOURCE}] scraped {len(all_jobs)} jobs from home page")
+        except Exception as e:
+            logger.error(f"[{self.SOURCE}] scrape error: {e}")
+        finally:
+            await self._close_browser()
         return all_jobs
