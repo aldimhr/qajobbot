@@ -307,8 +307,28 @@ async def cb_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         )
 
 
+from telegram import BotCommand
+
+
+async def register_commands(app: Application):
+    """Register bot commands in the Telegram menu."""
+    commands = [
+        BotCommand("start", "🤖 Mulai menggunakan bot"),
+        BotCommand("subscribe", "✅ Berlangganan notifikasi"),
+        BotCommand("unsubscribe", "🔕 Berhenti berlangganan"),
+        BotCommand("preferences", "⚙️ Atur filter preferensi"),
+        BotCommand("jobs", "📋 Lihat 10 lowongan terbaru"),
+        BotCommand("search", "🔍 Cari lowongan (contoh: /search selenium)"),
+        BotCommand("help", "📖 Daftar perintah"),
+        BotCommand("about", "ℹ️ Info tentang bot ini"),
+        BotCommand("deletedata", "🗑️ Hapus data kamu"),
+    ]
+    await app.bot.set_my_commands(commands)
+    logger.info("Bot commands registered in menu")
+
+
 def setup_bot(token: str) -> Application:
-    app = Application.builder().token(token).build()
+    app = Application.builder().token(token).post_init(register_commands).build()
     app.add_handler(CommandHandler("start", cmd_start))
     app.add_handler(CommandHandler("subscribe", cmd_subscribe))
     app.add_handler(CommandHandler("unsubscribe", cmd_unsubscribe))
