@@ -123,7 +123,7 @@ async def cb_preferences(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    await update.message.reply_text(
+    text = (
         "📖 *Perintah yang tersedia:*\n\n"
         "/start — Mulai menggunakan bot\n"
         "/subscribe — Berlangganan notifikasi\n"
@@ -133,9 +133,17 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/search <query> — Cari lowongan\n"
         "/deletedata — Hapus data kamu\n"
         "/help — Tampilkan pesan ini\n"
-        "/about — Info tentang bot ini",
-        parse_mode=ParseMode.MARKDOWN,
+        "/about — Info tentang bot ini"
     )
+    if is_admin(update.effective_user.id):
+        text += (
+            "\n\n🔧 *Admin Commands:*\n"
+            "/admin — Admin panel\n"
+            "/stats — Bot statistics\n"
+            "/errors — Recent errors\n"
+            "/broadcast <msg> — Send to all subscribers"
+        )
+    await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
