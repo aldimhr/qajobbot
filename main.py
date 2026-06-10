@@ -4,6 +4,7 @@ from config import settings
 from database import init_db
 from bot import setup_bot
 from scheduler import setup_scheduler
+from proxy_pool import proxy_pool
 
 logging.basicConfig(
     level=logging.INFO,
@@ -24,6 +25,11 @@ async def main():
     # Setup bot
     app = setup_bot(settings.BOT_TOKEN)
     logger.info("Bot handlers registered")
+
+    # Refresh proxy pool
+    logger.info("Refreshing proxy pool...")
+    await proxy_pool.refresh()
+    logger.info(f"Proxy pool ready: {proxy_pool.count} proxies")
 
     # Setup scheduler
     scheduler = setup_scheduler(app.bot)

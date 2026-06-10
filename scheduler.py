@@ -4,6 +4,7 @@ from telegram import Bot
 from enrichment import is_qa_job, is_indonesia_relevant, extract_skills, infer_level, summarize
 import database as db
 from dispatcher import dispatch_new_jobs, send_daily_digest
+from proxy_pool import proxy_pool
 from scrapers.remoteok import RemoteOKScraper
 from scrapers.remotive import RemotiveScraper
 from scrapers.weworkremotely import WWRScraper
@@ -86,6 +87,12 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
     sched.add_job(
         send_daily_digest, "cron", hour=8, minute=0,
         args=[bot], id="daily_digest",
+    )
+
+    # Refresh proxy pool every 2 hours
+    sched.add_job(
+        proxy_pool.refresh, "interval", hours=2,
+        id="proxy_refresh",
     )
 
     # Cleanup old jobs at 02:00
