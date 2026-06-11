@@ -1,5 +1,6 @@
 import aiosqlite
 import json
+import re
 from config import settings
 
 DB_PATH = settings.DB_PATH
@@ -24,6 +25,7 @@ CREATE TABLE IF NOT EXISTS jobs (
     posted_at       TEXT,
     scraped_at      TEXT NOT NULL DEFAULT (datetime('now')),
     is_active       INTEGER DEFAULT 1,
+    dedup_key       TEXT,
     UNIQUE(source, external_id)
 );
 """
@@ -65,6 +67,7 @@ CREATE_INDEXES = [
     "CREATE INDEX IF NOT EXISTS idx_jobs_scraped ON jobs(scraped_at DESC);",
     "CREATE INDEX IF NOT EXISTS idx_jobs_active  ON jobs(is_active) WHERE is_active=1;",
     "CREATE INDEX IF NOT EXISTS idx_jobs_source  ON jobs(source);",
+    "CREATE INDEX IF NOT EXISTS idx_jobs_dedup   ON jobs(dedup_key);",
 ]
 
 CREATE_FTS = """
@@ -106,17 +109,46 @@ async def init_db():
         await db.execute(CREATE_USERS)
         await db.execute(CREATE_SENT_JOBS)
         await db.execute(CREATE_ERROR_LOG)
+        # Migration: add dedup_key column if missing (must be before index creation)
+        try:
+            await db.execute("ALTER TABLE jobs ADD COLUMN dedup_key TEXT")
+            await db.commit()
+        except Exception:
+            pass  # Column already exists
         for idx in CREATE_INDEXES:
             await db.execute(idx)
         await db.execute(CREATE_FTS)
         for trigger in CREATE_FTS_TRIGGERS:
             await db.execute(trigger)
+        # Backfill dedup_key for existing jobs
+        await db.execute("""
+            UPDATE jobs SET dedup_key = lower(
+                replace(replace(replace(replace(
+                    trim(title || '|' || company_name),
+                    '.', ''), ',', ''), '-', ''), '  ', ' ')
+            ) WHERE dedup_key IS NULL
+        """)
         await db.commit()
 
 
 async def save_job(job: dict) -> bool:
-    """Insert job, ignore if duplicate. Returns True if newly inserted."""
+    """Insert job, ignore if duplicate (cross-source). Returns True if newly inserted."""
+    dedup_key = _make_dedup_key(job.get("title", ""), job.get("company_name", ""))
+    if not dedup_key:
+        # Can't dedup without a key, fall back to source+external_id
+        dedup_key = None
+
     async with aiosqlite.connect(DB_PATH) as db:
+        # Cross-source dedup: check if same title+company exists from any source
+        if dedup_key:
+            cursor = await db.execute(
+                "SELECT id, source FROM jobs WHERE dedup_key = ? LIMIT 1",
+                (dedup_key,),
+            )
+            existing = await cursor.fetchone()
+            if existing:
+                return False  # Already exists from another source
+
         skills = job.get("skills", "")
         if isinstance(skills, list):
             skills_str = ",".join(skills)
@@ -128,8 +160,8 @@ async def save_job(job: dict) -> bool:
                 INSERT OR IGNORE INTO jobs
                     (external_id, source, source_url, title, company_name, location,
                      is_remote, is_hybrid, work_type, experience_level,
-                     salary_min, salary_max, description_summary, skills, posted_at)
-                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
+                     salary_min, salary_max, description_summary, skills, posted_at, dedup_key)
+                VALUES (?,?,?,?,?,?,?,?,?,?,?,?,?,?,?,?)
                 """,
                 (
                     job["external_id"], job["source"], job["source_url"],
@@ -138,13 +170,28 @@ async def save_job(job: dict) -> bool:
                     job.get("work_type", ""), job.get("experience_level", "unknown"),
                     job.get("salary_min"), job.get("salary_max"),
                     job.get("description_summary", ""), skills_str,
-                    job.get("posted_at", ""),
+                    job.get("posted_at", ""), dedup_key,
                 ),
             )
             await db.commit()
             return cursor.rowcount > 0
         except aiosqlite.IntegrityError:
             return False
+
+
+def _make_dedup_key(title: str, company: str) -> str:
+    """Generate a normalized key for cross-source deduplication."""
+    t = re.sub(r"[^a-z0-9\s]", "", title.lower()).strip()
+    c = re.sub(r"[^a-z0-9\s]", "", company.lower()).strip()
+    if not t:
+        return ""
+    # Key = normalized title + company (if available)
+    key = t
+    if c:
+        key = f"{t}|{c}"
+    # Collapse whitespace
+    key = re.sub(r"\s+", " ", key).strip()
+    return key
 
 
 async def get_new_jobs(since_minutes: int = 16) -> list[dict]:
