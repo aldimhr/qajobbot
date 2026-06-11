@@ -78,3 +78,44 @@ def format_errors(errors: list[dict]) -> str:
         lines.append("")
 
     return "\n".join(lines)
+
+
+def format_scraper_status(status: dict) -> str:
+    """Format scraper status dict into a readable admin message."""
+    lines = ["🔍 *Scraper Status*\n"]
+
+    for name, s in status.items():
+        if s.get("is_running"):
+            icon = "🔄"
+        elif s.get("last_result") == "ok":
+            icon = "✅"
+        elif s.get("last_result") == "error":
+            icon = "❌"
+        else:
+            icon = "⏳"
+
+        interval = s.get("interval_minutes", "?")
+        lines.append(f"{icon} *{name}* (every {interval}m)")
+
+        if s.get("last_run"):
+            lines.append(f"  🕐 Last run: {s['last_run']}")
+        else:
+            lines.append(f"  🕐 Last run: never")
+
+        if s.get("is_running"):
+            lines.append(f"  ▶️ Status: *running now...*")
+        elif s.get("last_result") == "ok":
+            lines.append(
+                f"  📦 Scraped: {s['last_scraped']} → Saved: {s['last_saved']}"
+            )
+            lines.append(f"  ⏱ Duration: {s['last_duration']}s")
+        elif s.get("last_result") == "error":
+            lines.append(f"  💥 Error: {s.get('last_error', 'unknown')[:80]}")
+            lines.append(f"  🔢 Consecutive errors: {s.get('consecutive_errors', 0)}")
+
+        if s.get("next_run"):
+            lines.append(f"  ⏭ Next run: {s['next_run']}")
+
+        lines.append("")
+
+    return "\n".join(lines)

@@ -7,7 +7,7 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 import database as db
 from formatter import format_job_alert, format_digest
-from admin import is_admin, format_stats, format_errors
+from admin import is_admin, format_stats, format_errors, format_scraper_status
 
 logger = logging.getLogger(__name__)
 
@@ -137,11 +137,12 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
     if is_admin(update.effective_user.id):
         text += (
-            "\n\n🔧 *Admin Commands:*\n"
-            "/admin — Admin panel\n"
-            "/stats — Bot statistics\n"
-            "/errors — Recent errors\n"
-            "/broadcast <msg> — Send to all subscribers"
+            "\n\n🔧 *Admin Commands:*"
+            "\n/admin — Admin panel"
+            "\n/stats — Bot statistics"
+            "\n/errors — Recent errors"
+            "\n/scrapestatus — Scraper status & run now"
+            "\n/broadcast <msg> — Send to all subscribers"
         )
     await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
 
@@ -185,6 +186,9 @@ async def cmd_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
         [
             InlineKeyboardButton("👥 Users", callback_data="admin_users"),
             InlineKeyboardButton("📂 Sources", callback_data="admin_sources"),
+        ],
+        [
+            InlineKeyboardButton("🔍 Scrape Status", callback_data="admin_scrape_status"),
         ],
         [
             InlineKeyboardButton("🔄 Refresh Proxies", callback_data="admin_refresh_proxy"),
@@ -247,6 +251,36 @@ async def cmd_broadcast(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cmd_scrapestatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if not is_admin(update.effective_user.id):
+        return
+    from scheduler import get_scraper_status
+    status = get_scraper_status()
+    keyboard = _build_run_now_keyboard()
+    await update.message.reply_text(
+        format_scraper_status(status),
+        parse_mode=ParseMode.MARKDOWN,
+        reply_markup=InlineKeyboardMarkup(keyboard),
+    )
+
+
+def _build_run_now_keyboard() -> list:
+    """Build inline keyboard with 'Run Now' buttons per source."""
+    sources = ["linkedin", "glints", "kalibrr", "jobstreet",
+               "linkedin_posts", "remoteok", "remotive", "weworkremotely"]
+    row = []
+    keyboard = []
+    for src in sources:
+        row.append(InlineKeyboardButton(f"▶️ {src}", callback_data=f"admin_run_{src}"))
+        if len(row) == 2:
+            keyboard.append(row)
+            row = []
+    if row:
+        keyboard.append(row)
+    keyboard.append([InlineKeyboardButton("🔄 Refresh", callback_data="admin_scrape_status")])
+    return keyboard
+
+
 async def cb_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = update.callback_query
     if not is_admin(query.from_user.id):
@@ -306,6 +340,30 @@ async def cb_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "📢 Use /broadcast <message> to send to all subscribers."
         )
 
+    elif data == "admin_scrape_status":
+        from scheduler import get_scraper_status
+        status = get_scraper_status()
+        keyboard = _build_run_now_keyboard()
+        await query.edit_message_text(
+            format_scraper_status(status),
+            parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+    elif data.startswith("admin_run_"):
+        source_name = data.replace("admin_run_", "")
+        from scheduler import trigger_scraper_now
+        await query.edit_message_text(f"🔄 Running *{source_name}* scraper now...",
+                                      parse_mode=ParseMode.MARKDOWN)
+        result = await trigger_scraper_now(source_name, context.bot)
+        # Show result with back button
+        keyboard = [[InlineKeyboardButton("◀️ Back to Status",
+                                          callback_data="admin_scrape_status")]]
+        await query.edit_message_text(
+            result, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
 
 from telegram import BotCommand
 
@@ -342,6 +400,7 @@ def setup_bot(token: str) -> Application:
     app.add_handler(CommandHandler("stats", cmd_stats))
     app.add_handler(CommandHandler("errors", cmd_errors))
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
+    app.add_handler(CommandHandler("scrapestatus", cmd_scrapestatus))
     app.add_handler(CallbackQueryHandler(cb_preferences, pattern="^pref_"))
     app.add_handler(CallbackQueryHandler(cb_admin, pattern="^admin_"))
     return app
