@@ -10,6 +10,7 @@ from scrapers.remoteok import RemoteOKScraper
 from scrapers.remotive import RemotiveScraper
 from scrapers.weworkremotely import WWRScraper
 from scrapers.linkedin import LinkedInScraper
+from scrapers.linkedin_posts import LinkedInPostsScraper
 from scrapers.glints import GlintsScraper
 from scrapers.kalibrr import KalibrrScraper
 from scrapers.jobstreet import JobStreetScraper
@@ -82,6 +83,7 @@ def setup_scheduler(bot: Bot) -> AsyncIOScheduler:
         (RemotiveScraper(), "remotive", 60),
         (WWRScraper(), "weworkremotely", 60),
         (LinkedInScraper(), "linkedin", 15),
+        (LinkedInPostsScraper(), "linkedin_posts", 30),
         (GlintsScraper(), "glints", 15),
         (KalibrrScraper(), "kalibrr", 20),
         (JobStreetScraper(), "jobstreet", 20),

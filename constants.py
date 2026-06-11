@@ -57,3 +57,34 @@ QA_SEARCH_QUERIES = [
     "QA Engineer", "Quality Assurance", "Software Tester",
     "Test Automation", "SDET", "QA Analyst", "Manual Tester",
 ]
+
+# --- Hiring signals (for post scanning) ---
+HIRING_SIGNALS_ID = [
+    "dicari", "mencari", "butuh", "dibutuhkan", "kami butuh",
+    "lowongan", "loker", "hiring", "recruiting", "we're hiring",
+    "looking for", "cari", "sedang cari", "rekrut", "open position",
+    "info loker", "info lowongan", "join our team", "join my team",
+    "dibuka", "tersedia", "kesempatan", "peluang",
+]
+
+HIRING_SIGNALS_EN = [
+    "hiring", "we're hiring", "looking for", "seeking",
+    "open position", "job opening", "join our team",
+    "now hiring", "is hiring", "are hiring",
+    "we are looking", "my team is looking",
+]
+
+# LinkedIn posts search queries (rotate to avoid rate limits)
+LINKEDIN_POST_QUERIES = [
+    "qa engineer hiring",
+    "test engineer hiring",
+    "quality assurance hiring",
+    "qa automation hiring",
+    "selenium hiring",
+    "tester hiring",
+    "lowongan qa",
+    "lowongan tester",
+    "dicari qa",
+    "mencari qa engineer",
+    "qa engineer indonesia",
+]
