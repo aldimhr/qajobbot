@@ -341,7 +341,7 @@ async def cmd_scrapestatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     from scheduler import get_scraper_status
     status = get_scraper_status()
-    keyboard = _build_run_now_keyboard()
+    keyboard = _build_run_now_keyboard(status)
     await update.message.reply_text(
         format_scraper_status(status),
         parse_mode=ParseMode.MARKDOWN,
@@ -401,14 +401,18 @@ async def cb_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
-def _build_run_now_keyboard() -> list:
-    """Build inline keyboard with 'Run Now' buttons per source."""
+def _build_run_now_keyboard(scraper_status: dict = None) -> list:
+    """Build inline keyboard with 'Run Now' or 'Enable' buttons per source."""
     sources = ["linkedin", "glints", "kalibrr", "jobstreet",
                "linkedin_posts", "remoteok", "remotive", "weworkremotely"]
     row = []
     keyboard = []
     for src in sources:
-        row.append(InlineKeyboardButton(f"▶️ {src}", callback_data=f"admin_run_{src}"))
+        is_disabled = (scraper_status or {}).get(src, {}).get("is_disabled", False)
+        if is_disabled:
+            row.append(InlineKeyboardButton(f"🔴 Enable {src}", callback_data=f"admin_enable_{src}"))
+        else:
+            row.append(InlineKeyboardButton(f"▶️ {src}", callback_data=f"admin_run_{src}"))
         if len(row) == 2:
             keyboard.append(row)
             row = []
@@ -480,7 +484,7 @@ async def cb_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif data == "admin_scrape_status":
         from scheduler import get_scraper_status
         status = get_scraper_status()
-        keyboard = _build_run_now_keyboard()
+        keyboard = _build_run_now_keyboard(status)
         await query.edit_message_text(
             format_scraper_status(status),
             parse_mode=ParseMode.MARKDOWN,
@@ -494,6 +498,17 @@ async def cb_admin(update: Update, context: ContextTypes.DEFAULT_TYPE):
                                       parse_mode=ParseMode.MARKDOWN)
         result = await trigger_scraper_now(source_name, context.bot)
         # Show result with back button
+        keyboard = [[InlineKeyboardButton("◀️ Back to Status",
+                                          callback_data="admin_scrape_status")]]
+        await query.edit_message_text(
+            result, parse_mode=ParseMode.MARKDOWN,
+            reply_markup=InlineKeyboardMarkup(keyboard),
+        )
+
+    elif data.startswith("admin_enable_"):
+        source_name = data.replace("admin_enable_", "")
+        from scheduler import enable_scraper
+        result = enable_scraper(source_name)
         keyboard = [[InlineKeyboardButton("◀️ Back to Status",
                                           callback_data="admin_scrape_status")]]
         await query.edit_message_text(

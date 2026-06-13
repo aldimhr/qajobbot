@@ -85,7 +85,9 @@ def format_scraper_status(status: dict) -> str:
     lines = ["🔍 *Scraper Status*\n"]
 
     for name, s in status.items():
-        if s.get("is_running"):
+        if s.get("is_disabled"):
+            icon = "🔴"
+        elif s.get("is_running"):
             icon = "🔄"
         elif s.get("last_result") == "ok":
             icon = "✅"
@@ -96,6 +98,11 @@ def format_scraper_status(status: dict) -> str:
 
         interval = s.get("interval_minutes", "?")
         lines.append(f"{icon} *{name}* (every {interval}m)")
+
+        if s.get("is_disabled"):
+            lines.append(f"  🔴 *DISABLED* (too many consecutive errors)")
+            lines.append(f"  🔢 Errors: {s.get('consecutive_errors', 0)}")
+            lines.append(f"  💡 Use button below to re-enable")
 
         if s.get("last_run"):
             lines.append(f"  🕐 Last run: {s['last_run']}")

@@ -42,10 +42,14 @@ _scraper_state: dict[str, dict] = {}
 _scheduler_ref: AsyncIOScheduler | None = None
 
 
+AUTO_DISABLE_THRESHOLD = 5
+
+
 def _get_state(source: str) -> dict:
     if source not in _scraper_state:
         _scraper_state[source] = {
             "is_running": False,
+            "is_disabled": False,
             "last_run": None,      # ISO string
             "last_duration": None,  # seconds
             "last_result": None,   # "ok" | "error"
@@ -60,6 +64,12 @@ def _get_state(source: str) -> dict:
 async def run_scraper(scraper, source_name: str, bot: Bot = None):
     """Run a single scraper, filter, enrich, and save jobs."""
     state = _get_state(source_name)
+
+    # Skip disabled scrapers
+    if state.get("is_disabled"):
+        logger.info(f"[{source_name}] scraper is disabled, skipping")
+        return
+
     state["is_running"] = True
     start = time.monotonic()
 
@@ -84,8 +94,9 @@ async def run_scraper(scraper, source_name: str, bot: Bot = None):
             if isinstance(job.get("skills"), str):
                 job["skills"] = [s.strip() for s in job["skills"].split(",") if s.strip()]
             job["experience_level"] = infer_level(title, desc)
+            job_dedup_key = db._make_dedup_key(job.get("title", ""), job.get("company_name", ""))
             job["description_summary"] = await summarize(
-                title, job.get("company_name", ""), desc
+                title, job.get("company_name", ""), desc, job_dedup_key
             )
 
             # Remove raw description before saving
@@ -116,8 +127,17 @@ async def run_scraper(scraper, source_name: str, bot: Bot = None):
         state["last_scraped"] = 0
         state["last_saved"] = 0
 
+        # Auto-disable after threshold
+        if _error_counts[source_name] >= AUTO_DISABLE_THRESHOLD:
+            state["is_disabled"] = True
+            if bot:
+                await notify_scraper_error(
+                    bot, source_name,
+                    f"{e}\n\n🔴 *Auto-disabled* after {AUTO_DISABLE_THRESHOLD} consecutive errors.\n"
+                    f"Use /scrapestatus to re-enable."
+                )
         # Notify admin on first error or every 3rd consecutive error
-        if bot and (_error_counts[source_name] == 1 or _error_counts[source_name] % 3 == 0):
+        elif bot and (_error_counts[source_name] == 1 or _error_counts[source_name] % 3 == 0):
             await notify_scraper_error(
                 bot, source_name,
                 f"{e}\n(Consecutive errors: {_error_counts[source_name]})"
@@ -206,6 +226,8 @@ async def trigger_scraper_now(source_name: str, bot: Bot) -> str:
         return f"❌ Unknown source: {source_name}"
 
     state = _get_state(source_name)
+    if state.get("is_disabled"):
+        return f"🔴 {source_name} is disabled. Re-enable it first via /scrapestatus."
     if state["is_running"]:
         return f"⏳ {source_name} is already running, please wait."
 
@@ -222,3 +244,16 @@ async def trigger_scraper_now(source_name: str, bot: Bot) -> str:
         )
     else:
         return f"❌ {source_name} failed: {s['last_error']}"
+
+
+def enable_scraper(source_name: str) -> str:
+    """Re-enable a disabled scraper. Returns status message."""
+    if source_name not in _SCRAPER_FACTORIES:
+        return f"❌ Unknown source: {source_name}"
+    state = _get_state(source_name)
+    if not state.get("is_disabled"):
+        return f"✅ {source_name} is already enabled."
+    state["is_disabled"] = False
+    state["consecutive_errors"] = 0
+    _error_counts[source_name] = 0
+    return f"✅ {source_name} re-enabled! It will run on its next scheduled cycle."

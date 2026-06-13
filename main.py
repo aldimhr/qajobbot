@@ -1,7 +1,7 @@
 import asyncio
 import logging
 from config import settings
-from database import init_db
+from database import init_db, close_db
 from bot import setup_bot, register_commands
 from scheduler import setup_scheduler
 from proxy_pool import proxy_pool
@@ -52,3 +52,9 @@ if __name__ == "__main__":
         asyncio.run(main())
     except KeyboardInterrupt:
         logger.info("Bot stopped.")
+    finally:
+        # Close shared DB connection on exit
+        try:
+            asyncio.get_event_loop().run_until_complete(close_db())
+        except RuntimeError:
+            pass

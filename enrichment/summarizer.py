@@ -2,10 +2,20 @@ import re
 from config import settings
 
 
-async def summarize(title: str, company: str, description: str) -> str:
-    """Generate a 2-sentence summary. Uses Claude if ANTHROPIC_API_KEY set, else truncates."""
+async def summarize(title: str, company: str, description: str, dedup_key: str = "") -> str:
+    """Generate a 1-2 sentence summary. Uses cache + Claude if available, else truncates."""
     clean = re.sub(r"<[^>]+>", "", description).strip()
-    summary = clean[:200].rsplit(" ", 1)[0] + "..." if len(clean) > 200 else clean
+    fallback = clean[:200].rsplit(" ", 1)[0] + "..." if len(clean) > 200 else clean
+
+    # Check cache first
+    if dedup_key:
+        from database import get_cached_summary
+        cached = await get_cached_summary(dedup_key)
+        if cached:
+            return cached
+
+    # No cache hit — generate summary
+    summary = fallback
 
     if settings.ANTHROPIC_API_KEY:
         try:
@@ -28,5 +38,10 @@ async def summarize(title: str, company: str, description: str) -> str:
             summary = msg.content[0].text.strip()
         except Exception:
             pass  # fall through to plain summary
+
+    # Cache the result
+    if dedup_key and summary != fallback:
+        from database import cache_summary
+        await cache_summary(dedup_key, summary)
 
     return summary
