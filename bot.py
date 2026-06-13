@@ -8,6 +8,7 @@ from telegram.constants import ParseMode
 import database as db
 from formatter import format_job_alert, format_digest
 from admin import is_admin, format_stats, format_errors, format_scraper_status
+from constants import SKILL_PATTERNS
 
 logger = logging.getLogger(__name__)
 
@@ -16,9 +17,9 @@ async def cmd_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.upsert_user(user.id, user.username or "", user.first_name or "")
     await update.message.reply_text(
-        "👋 Halo! Saya bot lowongan QA Indonesia.\n\n"
-        "Gunakan /subscribe untuk mulai menerima notifikasi lowongan QA terbaru.\n"
-        "Gunakan /help untuk melihat semua perintah."
+        "👋 Hey there! I'm the QA Job Alert Bot.\n\n"
+        "Use /subscribe to start receiving QA job alerts.\n"
+        "Use /help to see all available commands."
     )
 
 
@@ -27,8 +28,8 @@ async def cmd_subscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await db.upsert_user(user.id, user.username or "", user.first_name or "")
     await db.set_subscribed(user.id, True)
     await update.message.reply_text(
-        "✅ Kamu sudah berlangganan! Kamu akan dapat notifikasi saat ada lowongan QA baru.\n\n"
-        "Gunakan /preferences untuk mengatur filter."
+        "✅ You're subscribed! You'll get notified when new QA jobs drop.\n\n"
+        "Use /preferences to set your filters."
     )
 
 
@@ -36,14 +37,14 @@ async def cmd_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user = update.effective_user
     await db.set_subscribed(user.id, False)
     await update.message.reply_text(
-        "🔕 Kamu sudah berhenti berlangganan. Gunakan /subscribe untuk mulai lagi."
+        "🔕 You've unsubscribed. Use /subscribe to start again."
     )
 
 
 async def cmd_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
     jobs = await db.get_recent_jobs(limit=10)
     if not jobs:
-        await update.message.reply_text("📭 Belum ada lowongan tersimpan. Coba lagi nanti.")
+        await update.message.reply_text("📭 No jobs saved yet. Check back later.")
         return
     for job in jobs:
         await update.message.reply_text(
@@ -56,11 +57,11 @@ async def cmd_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
 async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
     query = " ".join(context.args)
     if not query:
-        await update.message.reply_text("🔍 Contoh: /search selenium jakarta")
+        await update.message.reply_text("🔍 Usage: /search selenium jakarta")
         return
     jobs = await db.search_jobs(query, limit=5)
     if not jobs:
-        await update.message.reply_text(f"🔍 Tidak ditemukan lowongan untuk: {query}")
+        await update.message.reply_text(f"🔍 No jobs found for: {query}")
         return
     for job in jobs:
         await update.message.reply_text(
@@ -78,15 +79,23 @@ async def cmd_preferences(update: Update, context: ContextTypes.DEFAULT_TYPE):
         ],
         [
             InlineKeyboardButton("🏠 Hybrid", callback_data="pref_work_hybrid"),
-            InlineKeyboardButton("✅ Semua", callback_data="pref_work_any"),
+            InlineKeyboardButton("✅ All", callback_data="pref_work_any"),
         ],
         [
-            InlineKeyboardButton("⚡ Langsung", callback_data="pref_notif_instant"),
-            InlineKeyboardButton("📅 Harian (08:00)", callback_data="pref_notif_daily"),
+            InlineKeyboardButton("🟢 Entry", callback_data="pref_level_entry"),
+            InlineKeyboardButton("🟡 Mid", callback_data="pref_level_mid"),
+        ],
+        [
+            InlineKeyboardButton("🔴 Senior", callback_data="pref_level_senior"),
+            InlineKeyboardButton("✅ Any Level", callback_data="pref_level_any"),
+        ],
+        [
+            InlineKeyboardButton("⚡ Instant", callback_data="pref_notif_instant"),
+            InlineKeyboardButton("📅 Daily (08:00)", callback_data="pref_notif_daily"),
         ],
     ]
     await update.message.reply_text(
-        "⚙️ Pilih preferensi kamu:",
+        "⚙️ Set your preferences:",
         reply_markup=InlineKeyboardMarkup(keyboard),
     )
 
@@ -108,32 +117,47 @@ async def cb_preferences(update: Update, context: ContextTypes.DEFAULT_TYPE):
             "remote": "🌐 Remote Only",
             "onsite": "🏢 On-site",
             "hybrid": "🏠 Hybrid",
-            "any": "✅ Semua",
+            "any": "✅ All",
         }
         await query.edit_message_text(
-            f"✅ Preferensi diperbarui: {labels.get(work_type, work_type)}"
+            f"✅ Work type updated: {labels.get(work_type, work_type)}"
         )
 
     elif data.startswith("pref_notif_"):
         mode = data.replace("pref_notif_", "")
         prefs["notification_mode"] = mode
         await db.update_user_preferences(user_id, prefs)
-        labels = {"instant": "⚡ Langsung", "daily": "📅 Harian (08:00)"}
-        await query.edit_message_text(f"✅ Notifikasi: {labels.get(mode, mode)}")
+        labels = {"instant": "⚡ Instant", "daily": "📅 Daily (08:00 WIB)"}
+        await query.edit_message_text(f"✅ Notification mode: {labels.get(mode, mode)}")
+
+    elif data.startswith("pref_level_"):
+        level = data.replace("pref_level_", "")
+        prefs["experience_level"] = level
+        await db.update_user_preferences(user_id, prefs)
+        labels = {
+            "entry": "🟢 Entry",
+            "mid": "🟡 Mid",
+            "senior": "🔴 Senior",
+            "any": "✅ Any Level",
+        }
+        await query.edit_message_text(
+            f"✅ Experience level: {labels.get(level, level)}"
+        )
 
 
 async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (
-        "📖 *Perintah yang tersedia:*\n\n"
-        "/start — Mulai menggunakan bot\n"
-        "/subscribe — Berlangganan notifikasi\n"
-        "/unsubscribe — Berhenti berlangganan\n"
-        "/preferences — Atur filter preferensi\n"
-        "/jobs — Lihat 10 lowongan terbaru\n"
-        "/search <query> — Cari lowongan\n"
-        "/deletedata — Hapus data kamu\n"
-        "/help — Tampilkan pesan ini\n"
-        "/about — Info tentang bot ini"
+        "📖 *Available Commands:*\n\n"
+        "/start — Get started\n"
+        "/subscribe — Subscribe to job alerts\n"
+        "/unsubscribe — Stop receiving alerts\n"
+        "/preferences — Set your filters\n"
+        "/skills — Set skill-based filters\n"
+        "/jobs — View 10 latest jobs\n"
+        "/search <query> — Search jobs\n"
+        "/deletedata — Delete your data\n"
+        "/help — Show this message\n"
+        "/about — About this bot"
     )
     if is_admin(update.effective_user.id):
         text += (
@@ -149,10 +173,10 @@ async def cmd_help(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
 async def cmd_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await update.message.reply_text(
-        "🧪 *QA Job Bot*\n\n"
-        "Bot ini memantau lowongan kerja QA/Testing dari berbagai job board Indonesia "
-        "dan mengirimkan notifikasi langsung ke Telegram kamu.\n\n"
-        "*Sumber data:*\n"
+        "🧪 *QA Job Alert Bot*\n\n"
+        "I monitor QA/Testing jobs from top job boards in Indonesia "
+        "and send alerts straight to your Telegram.\n\n"
+        "*Data sources:*\n"
         "• LinkedIn (RSS)\n"
         "• Glints\n"
         "• Kalibrr\n"
@@ -160,16 +184,69 @@ async def cmd_about(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "• Remote OK\n"
         "• Remotive\n"
         "• We Work Remotely\n\n"
-        "Dibuat dengan ❤️ untuk komunitas QA Indonesia.",
+        "Made with ❤️ for the Indonesian QA community.",
         parse_mode=ParseMode.MARKDOWN,
     )
+
+
+async def cmd_skills(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Set skill-based filters for job alerts."""
+    user_id = update.effective_user.id
+    user = await db.get_user(user_id)
+    prefs = json.loads(user.get("preferences", "{}")) if user else {}
+    current_skills = prefs.get("preferred_skills", [])
+
+    if not context.args:
+        if current_skills:
+            skill_list = ", ".join(current_skills)
+            text = (
+                f"🎯 *Your skill filters:* {skill_list}\n\n"
+                "Usage: /skills selenium,playwright,cypress\n"
+                "Send /skills clear to remove all filters."
+            )
+        else:
+            text = (
+                "🎯 *No skill filters set.* You'll receive all QA jobs.\n\n"
+                "Usage: /skills selenium,playwright,cypress\n"
+                f"Available: {', '.join(sorted(SKILL_PATTERNS.keys()))}"
+            )
+        await update.message.reply_text(text, parse_mode=ParseMode.MARKDOWN)
+        return
+
+    raw = " ".join(context.args)
+    if raw.lower() == "clear":
+        prefs["preferred_skills"] = []
+        await db.update_user_preferences(user_id, prefs)
+        await update.message.reply_text("🗑️ Skill filters cleared. You'll receive all QA jobs.")
+        return
+
+    requested = [s.strip().lower() for s in raw.split(",") if s.strip()]
+    known = set(SKILL_PATTERNS.keys())
+    unknown = [s for s in requested if s not in known]
+    valid = [s for s in requested if s in known]
+    if not valid:
+        await update.message.reply_text(
+            f"❌ None of those match known skills.\n\n"
+            f"Available: {', '.join(sorted(known))}",
+            parse_mode=ParseMode.MARKDOWN,
+        )
+        return
+
+    prefs["preferred_skills"] = valid
+    await db.update_user_preferences(user_id, prefs)
+
+    msg = f"✅ Skill filters updated: *{', '.join(valid)}*"
+    if unknown:
+        msg += f"\n⚠️ Skipped unknown: {', '.join(unknown)}"
+    msg += "\n\nYou'll only receive jobs matching at least one of these skills."
+    await update.message.reply_text(msg, parse_mode=ParseMode.MARKDOWN)
 
 
 async def cmd_deletedata(update: Update, context: ContextTypes.DEFAULT_TYPE):
     user_id = update.effective_user.id
     await db.delete_user(user_id)
     await update.message.reply_text(
-        "🗑️ Data kamu sudah dihapus. Gunakan /start untuk mulai lagi."
+        "🗑️ Your data has been deleted. Use /start to begin again."
     )
 
 
@@ -371,15 +448,16 @@ from telegram import BotCommand
 async def register_commands(app: Application):
     """Register bot commands in the Telegram menu."""
     commands = [
-        BotCommand("start", "🤖 Mulai menggunakan bot"),
-        BotCommand("subscribe", "✅ Berlangganan notifikasi"),
-        BotCommand("unsubscribe", "🔕 Berhenti berlangganan"),
-        BotCommand("preferences", "⚙️ Atur filter preferensi"),
-        BotCommand("jobs", "📋 Lihat 10 lowongan terbaru"),
-        BotCommand("search", "🔍 Cari lowongan"),
-        BotCommand("help", "📖 Daftar perintah"),
-        BotCommand("about", "ℹ️ Info tentang bot ini"),
-        BotCommand("deletedata", "🗑️ Hapus data kamu"),
+        BotCommand("start", "🤖 Get started"),
+        BotCommand("subscribe", "✅ Subscribe to job alerts"),
+        BotCommand("unsubscribe", "🔕 Stop receiving alerts"),
+        BotCommand("preferences", "⚙️ Set your filters"),
+        BotCommand("skills", "🎯 Set skill-based filters"),
+        BotCommand("jobs", "📋 View 10 latest jobs"),
+        BotCommand("search", "🔍 Search jobs"),
+        BotCommand("help", "📖 List all commands"),
+        BotCommand("about", "ℹ️ About this bot"),
+        BotCommand("deletedata", "🗑️ Delete your data"),
     ]
     await app.bot.set_my_commands(commands)
     logger.info("Bot commands registered in menu")
@@ -395,6 +473,7 @@ def setup_bot(token: str) -> Application:
     app.add_handler(CommandHandler("search", cmd_search))
     app.add_handler(CommandHandler("help", cmd_help))
     app.add_handler(CommandHandler("about", cmd_about))
+    app.add_handler(CommandHandler("skills", cmd_skills))
     app.add_handler(CommandHandler("deletedata", cmd_deletedata))
     app.add_handler(CommandHandler("admin", cmd_admin))
     app.add_handler(CommandHandler("stats", cmd_stats))

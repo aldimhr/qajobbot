@@ -55,7 +55,7 @@ def format_job_alert(job: dict) -> str:
     # Apply link
     source_url = job.get("source_url", "")
     if source_url:
-        lines.append(f"\n🔗 [Lamar Sekarang]({source_url})")
+        lines.append(f"\n🔗 [Apply Now]({source_url})")
 
     # Source + posted
     source = job.get("source", "")
@@ -64,7 +64,7 @@ def format_job_alert(job: dict) -> str:
     if posted:
         meta_parts.append(f"📅 {_escape_md(posted[:10])}")
     if source:
-        meta_parts.append(f"Sumber: {_escape_md(source)}")
+        meta_parts.append(f"Source: {_escape_md(source)}")
     if meta_parts:
         lines.append(f"{' · '.join(meta_parts)}")
 
@@ -74,9 +74,9 @@ def format_job_alert(job: dict) -> str:
 def format_digest(jobs: list[dict]) -> str:
     """Format a daily/weekly digest of jobs as a compact list."""
     if not jobs:
-        return "📭 Tidak ada lowongan baru dalam 24 jam terakhir."
+        return "📭 No new jobs in the last 24 hours."
 
-    lines = [f"📋 *Lowongan QA Terbaru* ({len(jobs)} lowongan)\n"]
+    lines = [f"📋 *Latest QA Jobs* ({len(jobs)} jobs)\n"]
     for i, job in enumerate(jobs, 1):
         title = job.get("title", "")
         company = job.get("company_name", "")
