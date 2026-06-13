@@ -81,8 +81,54 @@ def format_digest(jobs: list[dict]) -> str:
         title = job.get("title", "")
         company = job.get("company_name", "")
         source_url = job.get("source_url", "")
-        link = f" [Lamar]({source_url})" if source_url else ""
+        link = f" [Apply]({source_url})" if source_url else ""
         lines.append(f"{i}. {_escape_md(title)} — {_escape_md(company)}{link}")
+
+    return "\n".join(lines)
+
+
+def format_jobs_page(jobs: list[dict], offset: int, total: int) -> str:
+    """Format a page of jobs as a compact list with numbered entries."""
+    if not jobs:
+        return "📭 No jobs found."
+
+    start = offset + 1
+    end = offset + len(jobs)
+    lines = [f"📋 *QA Jobs* ({start}\u2013{end} of {total})\n"]
+
+    for i, job in enumerate(jobs, start):
+        title = job.get("title", "Unknown")
+        company = job.get("company_name", "")
+        source_url = job.get("source_url", "")
+
+        # Compact metadata line
+        meta = []
+        location = job.get("location", "")
+        if job.get("is_remote"):
+            meta.append("🌐 Remote")
+        elif job.get("is_hybrid"):
+            meta.append("🏠 Hybrid")
+        elif location:
+            meta.append(f"📍 {_escape_md(location[:20])}")
+
+        level = job.get("experience_level", "")
+        if level and level != "unknown":
+            level_emoji = {"entry": "🟢", "mid": "🟡", "senior": "🔴"}.get(level, "⚪")
+            meta.append(f"{level_emoji} {level.capitalize()}")
+
+        salary_str = ""
+        if job.get("salary_min") or job.get("salary_max"):
+            salary_str = _format_salary(job.get("salary_min"), job.get("salary_max"))
+            meta.append(f"💰 {salary_str}")
+
+        link = f" [Apply \u2192]({source_url})" if source_url else ""
+        meta_str = " · ".join(meta)
+
+        lines.append(f"{i}. *{_escape_md(title)}* \u2014 {_escape_md(company)}")
+        if meta_str:
+            lines.append(f"   {meta_str}{link}")
+        elif link:
+            lines.append(f"   {link}")
 
     return "\n".join(lines)
 

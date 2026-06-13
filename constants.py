@@ -30,20 +30,59 @@ NON_ID_RESTRICTIONS = [
 
 # --- Skill extraction patterns ---
 SKILL_PATTERNS = {
+    # Test automation frameworks
     "selenium": r"\bselenium\b",
     "cypress": r"\bcypress\b",
     "playwright": r"\bplaywright\b",
-    "postman": r"\bpostman\b",
-    "jira": r"\bjira\b",
-    "pytest": r"\bpytest\b",
-    "robot framework": r"robot framework",
     "appium": r"\bappium\b",
+    "robot framework": r"robot framework",
+    "rest assured": r"rest.?assured",
+    "testng": r"\btestng\b",
+    "junit": r"\bjunit\b",
+    "cucumber": r"\bcucumber\b",
+    "behave": r"\bbehave\b",
+    "detox": r"\bdetox\b",
+    "xcuitest": r"\bxcuitest\b",
+    "espresso": r"\bespresso\b",
+    "webdriverio": r"\bwebdriverio\b",
+    "puppeteer": r"\bpuppeteer\b",
+    "taiko": r"\btaiko\b",
+    # API & performance testing
+    "postman": r"\bpostman\b",
     "k6": r"\bk6\b",
     "jmeter": r"\bjmeter\b",
-    "sql": r"\bsql\b",
+    "gatling": r"\bgatling\b",
+    "locust": r"\blocust\b",
+    "artillery": r"\bartillery\b",
     "api testing": r"api test",
     "mobile testing": r"mobile test",
-    "rest assured": r"rest.?assured",
+    # Languages & scripting
+    "python": r"\bpython\b",
+    "java": r"\bjava\b",
+    "javascript": r"\bjavascript\b",
+    "typescript": r"\btypescript\b",
+    "groovy": r"\bgroovy\b",
+    "sql": r"\bsql\b",
+    # DevOps & CI/CD
+    "docker": r"\bdocker\b",
+    "kubernetes": r"\bkubernetes\b|\bk8s\b",
+    "jenkins": r"\bjenkins\b",
+    "gitlab ci": r"\bgitlab.?ci\b",
+    "github actions": r"github.?actions",
+    "aws": r"\baws\b",
+    "azure": r"\bazure\b",
+    "terraform": r"\bterraform\b",
+    # Project management & reporting
+    "jira": r"\bjira\b",
+    "testrail": r"\btestrail\b",
+    "zephyr": r"\bzephyr\b",
+    "xray": r"\bxray\b",
+    "qase": r"\bqase\b",
+    "allure": r"\ballure\b",
+    # QA concepts
+    "bdd": r"\bbdd\b",
+    "tdd": r"\btdd\b",
+    "ci/cd": r"\bci.?cd\b",
 }
 
 # --- Scraping config ---

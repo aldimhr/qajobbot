@@ -7,6 +7,7 @@ from telegram.ext import (
 from telegram.constants import ParseMode
 import database as db
 from formatter import format_job_alert, format_digest
+from formatter import format_jobs_page
 from admin import is_admin, format_stats, format_errors, format_scraper_status
 from constants import SKILL_PATTERNS
 
@@ -41,34 +42,41 @@ async def cmd_unsubscribe(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+PAGE_SIZE = 5
+
+
 async def cmd_jobs(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    jobs = await db.get_recent_jobs(limit=10)
+    jobs, total = await db.get_recent_jobs_page(offset=0, limit=PAGE_SIZE)
     if not jobs:
         await update.message.reply_text("📭 No jobs saved yet. Check back later.")
         return
-    for job in jobs:
-        await update.message.reply_text(
-            format_job_alert(job),
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True,
-        )
+    text = format_jobs_page(jobs, 0, total)
+    keyboard = _build_page_keyboard("jobs", "", 0, total)
+    await update.message.reply_text(
+        text,
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+    )
 
 
 async def cmd_search(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    query = " ".join(context.args)
+    query = " ".join(context.args or [])
     if not query:
         await update.message.reply_text("🔍 Usage: /search selenium jakarta")
         return
-    jobs = await db.search_jobs(query, limit=5)
+    jobs, total = await db.search_jobs_page(query, offset=0, limit=PAGE_SIZE)
     if not jobs:
         await update.message.reply_text(f"🔍 No jobs found for: {query}")
         return
-    for job in jobs:
-        await update.message.reply_text(
-            format_job_alert(job),
-            parse_mode=ParseMode.MARKDOWN,
-            disable_web_page_preview=True,
-        )
+    text = f"🔍 *Results for:* {query}\n\n" + format_jobs_page(jobs, 0, total)
+    keyboard = _build_page_keyboard("search", query, 0, total)
+    await update.message.reply_text(
+        text,
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+    )
 
 
 async def cmd_preferences(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -341,6 +349,58 @@ async def cmd_scrapestatus(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+
+def _build_page_keyboard(kind: str, query: str, offset: int, total: int) -> list:
+    """Build pagination keyboard for /jobs and /search results."""
+    buttons = []
+    if offset > 0:
+        prev_off = max(0, offset - PAGE_SIZE)
+        buttons.append(
+            InlineKeyboardButton("⬅️ Previous", callback_data=f"pg_{kind}:{prev_off}:{query[:20]}")
+        )
+    if offset + PAGE_SIZE < total:
+        next_off = offset + PAGE_SIZE
+        buttons.append(
+            InlineKeyboardButton("Next ➡️", callback_data=f"pg_{kind}:{next_off}:{query[:20]}")
+        )
+    return [buttons] if buttons else []
+
+
+async def cb_page(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    """Handle pagination callbacks for /jobs and /search."""
+    query = update.callback_query
+    await query.answer()
+    data = query.data  # e.g. "pg_jobs:5:" or "pg_search:10:selenium"
+
+    parts = data.split(":", 2)
+    kind = parts[0].replace("pg_", "")
+    offset = int(parts[1])
+    search_term = parts[2] if len(parts) > 2 else ""
+
+    if kind == "jobs":
+        jobs, total = await db.get_recent_jobs_page(offset=offset, limit=PAGE_SIZE)
+        text = format_jobs_page(jobs, offset, total)
+        keyboard = _build_page_keyboard("jobs", "", offset, total)
+    elif kind == "search" and search_term:
+        jobs, total = await db.search_jobs_page(search_term, offset=offset, limit=PAGE_SIZE)
+        text = f"🔍 *Results for:* {search_term}\n\n" + format_jobs_page(jobs, offset, total)
+        keyboard = _build_page_keyboard("search", search_term, offset, total)
+    else:
+        await query.edit_message_text("❌ Invalid page request.")
+        return
+
+    if not jobs:
+        await query.edit_message_text("📭 No jobs on this page.")
+        return
+
+    await query.edit_message_text(
+        text,
+        parse_mode=ParseMode.MARKDOWN,
+        disable_web_page_preview=True,
+        reply_markup=InlineKeyboardMarkup(keyboard) if keyboard else None,
+    )
+
+
 def _build_run_now_keyboard() -> list:
     """Build inline keyboard with 'Run Now' buttons per source."""
     sources = ["linkedin", "glints", "kalibrr", "jobstreet",
@@ -481,5 +541,6 @@ def setup_bot(token: str) -> Application:
     app.add_handler(CommandHandler("broadcast", cmd_broadcast))
     app.add_handler(CommandHandler("scrapestatus", cmd_scrapestatus))
     app.add_handler(CallbackQueryHandler(cb_preferences, pattern="^pref_"))
+    app.add_handler(CallbackQueryHandler(cb_page, pattern="^pg_"))
     app.add_handler(CallbackQueryHandler(cb_admin, pattern="^admin_"))
     return app

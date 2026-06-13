@@ -284,6 +284,21 @@ async def get_recent_jobs(limit: int = 20) -> list[dict]:
         return [dict(r) for r in await cursor.fetchall()]
 
 
+async def get_recent_jobs_page(offset: int = 0, limit: int = 5) -> tuple[list[dict], int]:
+    """Get a page of recent jobs with total count. Returns (jobs, total)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            "SELECT COUNT(*) FROM jobs WHERE is_active = 1"
+        )
+        total = (await cursor.fetchone())[0]
+        cursor = await db.execute(
+            "SELECT * FROM jobs WHERE is_active = 1 ORDER BY scraped_at DESC LIMIT ? OFFSET ?",
+            (limit, offset),
+        )
+        return [dict(r) for r in await cursor.fetchall()], total
+
+
 async def search_jobs(query: str, limit: int = 20) -> list[dict]:
     async with aiosqlite.connect(DB_PATH) as db:
         db.row_factory = aiosqlite.Row
@@ -298,6 +313,32 @@ async def search_jobs(query: str, limit: int = 20) -> list[dict]:
             (query, limit),
         )
         return [dict(r) for r in await cursor.fetchall()]
+
+
+async def search_jobs_page(query: str, offset: int = 0, limit: int = 5) -> tuple[list[dict], int]:
+    """Search jobs with pagination. Returns (jobs, total)."""
+    async with aiosqlite.connect(DB_PATH) as db:
+        db.row_factory = aiosqlite.Row
+        cursor = await db.execute(
+            """
+            SELECT COUNT(*) FROM jobs j
+            JOIN jobs_fts fts ON j.id = fts.rowid
+            WHERE jobs_fts MATCH ?
+            """,
+            (query,),
+        )
+        total = (await cursor.fetchone())[0]
+        cursor = await db.execute(
+            """
+            SELECT j.* FROM jobs j
+            JOIN jobs_fts fts ON j.id = fts.rowid
+            WHERE jobs_fts MATCH ?
+            ORDER BY rank
+            LIMIT ? OFFSET ?
+            """,
+            (query, limit, offset),
+        )
+        return [dict(r) for r in await cursor.fetchall()], total
 
 
 async def update_user_preferences(telegram_id: int, prefs: dict):
